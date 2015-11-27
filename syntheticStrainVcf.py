@@ -4,7 +4,7 @@
 import sys, os
 import logging
 import argparse
-import pyvcf
+import vcf
 
 class VCFMerger:
     def __init__( self ):
@@ -15,7 +15,8 @@ class VCFMerger:
     	"""Handle command line argument parsing"""
         parser = argparse.ArgumentParser(description='merges synthetic strain separated vcfs.')
         parser.add_argument('vcf_fns', nargs='+', type=str, help='vcf file name')
-        parser.add_argument('outfile', nargs='?', type=argparse.FileType('w'), default=sys.stdout)
+        parser.add_argument('--outfile', type=argparse.FileType('w'), default=sys.stdout)
+        parser.add_argument( "-s", "--snps", action="store_true", help="only output sps" )
         parser.add_argument( "-l", "--logFile", help="Specify a file to log to. Defaults to stderr." )
         parser.add_argument( "-d", "--debug", action="store_true", help="Increases verbosity of logging" )
         parser.add_argument( "-i", "--info", action="store_true", help="Display informative log entries" )
@@ -23,6 +24,7 @@ class VCFMerger:
         
         self.args = parser.parse_args()
         self.variant_dict = {}
+        self.strains = len(self.args.vcf_fns)
 
 
     def __initLog( self ):
@@ -38,7 +40,7 @@ class VCFMerger:
         else:
             logging.basicConfig( stream=sys.stderr, level=logLevel, format=logFormat )
 
-    def printMergedLines ( self, variant_dict ):
+    def printMergedLines ( self ):
     	""" 
     	Prints out lines that are merged in vcf format
     	:param variant_dict: dictionary of format (refid, pos) -> list of variants across samples
@@ -48,36 +50,43 @@ class VCFMerger:
     	ref_positions = variant_dict.keys()
     	ref_positions.sort()
     	for ref_pos in ref_positions:
-    		refid, pos = ref_pos
-    		variants = variant_dict[refpos]
-			# if all have the same we'll give a 1/1
-			vlist = convert_variants_to_vlist(variants) # set of variants
-			ref_allele = variants[0].REF[0]
-			if len (variants) == self.strains and len(vlist) == 1:
-				gt = "1/1"
-				alt_allele = vlist[0]
-			# if some have it and others do not 0/1
-			elif len(variants) < self.strains and len(vlist) == 1:
-				gt = "0/1"
-				alt_allele = vlist[0]
-			# if they have different variants then 1/2
-			elif len(variants) == self.strains and len(vlist) == 2:
-				gt = "1/2"
-				alt_allele = ",".join(map(str, vlist))
-			else:
-				continue
-			# NOTE IF WE WANT TO DO GENERIC PLOIDY WE WILL HAVE TO EXPAND THIS
-			# write out the line
-			sys.args.outfile.write("%s %s %s %s %s %s %s\n" % (refid, pos, ".", ref_allele, alt_allele,"GT",gt))
+            refid, pos = ref_pos
+            variants = variant_dict[ref_pos]
+            snpsboolean = map(lambda x: x.is_snp, variants)
+            if self.args.snps and False in snpsboolean:
+                continue
+            # if all have the same we'll give a 1/1
+            # set of variants
+            vlist = self.convert_variants_to_vlist(variants)
+            ref_allele = variants[0].REF[0]
+            if len (variants) == self.strains and len(vlist) == 1:
+                gt = "1/1"
+                alt_allele = list(vlist)[0]
+            # if some have it and others do not 0/1
+            elif len(variants) < self.strains and len(vlist) == 1:
+                gt = "0/1"
+                alt_allele = list(vlist)[0]
+            # if they have different variants then 1/2
+            elif len(variants) == self.strains and len(vlist) == 2:
+            	print >>sys.stderr, "2 alt alleles at ref %s and pos %s: " %(refid, pos), vlist
+                gt = "1/2"
+                alt_allele = ",".join(map(str, list(vlist)))
+            else:
+                continue
+            # NOTE IF WE WANT TO DO GENERIC PLOIDY WE WILL HAVE TO EXPAND THIS
+            # write out the line
+            self.args.outfile.write("%s %s %s %s %s %s %s\n" % (refid, pos, ".", ref_allele, alt_allele,"GT",gt))
 
-	def convert_variants_to_vlist (self, variants):
-		return set(map(lambda x: x.ALT[0]))
+    def convert_variants_to_vlist (self, variants):
+  	 	# 	for v in variants:
+    	#		print >>sys.stderr, v.ALT[0], v.is_indel, v.is_snp
+        return set(map(lambda x: str(x.ALT[0]), variants))
 
     def vcfDictUpdate (self, vcf_fn):
-    	vcf_reader = vcf.Reader(open(fn, 'r'))
+    	vcf_reader = vcf.Reader(open(vcf_fn, 'r'))
     	for record in vcf_reader:
-			reference_pos = (record.CHROM, record.POS)
-    		self.variant_dict.setdefault(reference_pos, []).append(record)
+            reference_pos = (record.CHROM, record.POS)
+            self.variant_dict.setdefault(reference_pos, []).append(record)
 
    	'''
     def vcfToSyntheticMerge (self, vcf_fn):
@@ -91,7 +100,8 @@ class VCFMerger:
         logging.info("Log level set to INFO")
         logging.debug("Log Level set to DEBUG")
         for vcf_fn in self.args.vcf_fns:
-	        vcfDictUpdate(vcf_fn)
+            self.vcfDictUpdate(vcf_fn)
+        self.printMergedLines()
         return 0
 
 if __name__ == "__main__":
