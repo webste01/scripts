@@ -49,21 +49,26 @@ class VCFMerger:
     	ref_positions.sort()
     	for ref_pos in ref_positions:
     		refid, pos = ref_pos
-    		for variants in variant_dict[refpos]:
-    			# if all have the same we'll give a 1/1
-				vlist = convert_variants_to_vlist(variants) # set of variants
-				if len (variants) == self.strains and len(vlist) == 1:
-					gt = "1/1"
-    			# if some have it and others do not 0/1
-    			elif len(variants) < self.strains and len(vlist) == 1:
-    				gt = "0/1"
-    			# if they have different variants then 1/2
-    			elif len(variants) == self.strains and len(vlist) == 2:
-    				gt = "1/2"
-    			else:
-    				continue
-    			# NOTE IF WE WANT TO DO GENERIC PLOIDY WE WILL HAVE TO EXPAND THIS
-    			# write out the line
+    		variants = variant_dict[refpos]
+			# if all have the same we'll give a 1/1
+			vlist = convert_variants_to_vlist(variants) # set of variants
+			ref_allele = variants[0].REF[0]
+			if len (variants) == self.strains and len(vlist) == 1:
+				gt = "1/1"
+				alt_allele = vlist[0]
+			# if some have it and others do not 0/1
+			elif len(variants) < self.strains and len(vlist) == 1:
+				gt = "0/1"
+				alt_allele = vlist[0]
+			# if they have different variants then 1/2
+			elif len(variants) == self.strains and len(vlist) == 2:
+				gt = "1/2"
+				alt_allele = ",".join(map(str, vlist))
+			else:
+				continue
+			# NOTE IF WE WANT TO DO GENERIC PLOIDY WE WILL HAVE TO EXPAND THIS
+			# write out the line
+			sys.args.outfile.write("%s %s %s %s %s %s %s\n" % (refid, pos, ".", ref_allele, alt_allele,"GT",gt))
 
 	def convert_variants_to_vlist (self, variants):
 		return set(map(lambda x: x.ALT[0]))
